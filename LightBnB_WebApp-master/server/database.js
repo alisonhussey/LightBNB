@@ -16,18 +16,6 @@ const pool = new Pool({
  * @param {String} email The email of the user.
  * @return {Promise<{}>} A promise to the user.
  */
-// const getUserWithEmail = function(email) {
-//   let user;
-//   for (const userId in users) {
-//     user = users[userId];
-//     if (user.email.toLowerCase() === email.toLowerCase()) {
-//       break;
-//     } else {
-//       user = null;
-//     }
-//   }
-//   return Promise.resolve(user);
-// }
 
 const getUserWithEmail = function(email) {
   const queryString = `
@@ -112,13 +100,85 @@ exports.getAllReservations = getAllReservations;
  * @param {*} limit The number of results to return.
  * @return {Promise<[{}]>}  A promise to the properties.
  */
+
+// SELECT properties.*, avg(property_reviews.rating) as average_rating
+// FROM properties
+// JOIN property_reviews ON properties.id = property_id
+// WHERE city LIKE '%ancouv%'
+// AND minimum_cost && maximum cost
+// GROUP BY properties.id
+// HAVING avg(property_reviews.rating) >= 4
+// ORDER BY cost_per_night
+// LIMIT 10;
+
 const getAllProperties = function(options, limit = 10) {
-  return pool.query(`
-  SELECT * FROM properties
-  LIMIT $1
-  `, [limit])
+  console.log(options)
+  // 1
+  const queryParams = [];
+  // 2
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  // 3
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    queryString += `WHERE city LIKE $${queryParams.length} `;
+  } 
+  if (options.owner_id) {
+    queryParams.push(options.owner_id);
+    if (queryParams.length === 1){
+      queryString += `WHERE owner_id = $${queryParams.length}`;
+    } else {
+      queryString += ` AND owner_id = $${queryParams.length}`;
+    }
+  }
+  if (options.minimum_price_per_night) {
+ 
+    queryParams.push(options.minimum_price_per_night);
+    if (queryParams.length === 1) {
+      queryString += `WHERE cost_per_night/100 >= $${queryParams.length}`;
+    } else {
+      queryString += ` AND cost_per_night/100 >= $${queryParams.length}`;
+    }
+  }
+  if (options.maximum_price_per_night) {
+    queryParams.push(options.maximum_price_per_night);
+    if (queryParams.length === 1) {
+      queryString += `WHERE cost_per_night/100 <= $${queryParams.length}`;
+    } else {
+      queryString += ` AND cost_per_night/100 <= $${queryParams.length}`;
+    }
+  }
+
+
+  // 4
+  
+  queryString += `
+  GROUP BY properties.id
+  `;
+
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    queryString += `HAVING avg(property_reviews.rating) >= $${queryParams.length} `;
+  }
+
+  queryParams.push(limit);
+  queryString += `ORDER BY cost_per_night
+  LIMIT $${queryParams.length}`;
+
+
+
+  // 5
+  console.log(queryString, queryParams);
+
+  // 6
+  return pool.query(queryString, queryParams)
   .then(res => res.rows);
 }
+
   
 exports.getAllProperties = getAllProperties;
 
@@ -134,3 +194,5 @@ const addProperty = function(property) {
   return Promise.resolve(property);
 }
 exports.addProperty = addProperty;
+
+//i'll have to change the join to make sure that properties are there eve if property_reviews is null.
